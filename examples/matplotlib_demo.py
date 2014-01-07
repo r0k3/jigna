@@ -1,9 +1,16 @@
+""" This example shows how to embed matplotlib plots over the web by passing 
+the plots in svg format over the jigna bridge.
+"""
+
+#### Imports ####
+
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import numpy as np
 from StringIO import StringIO
-from traits.api import HasTraits, CInt, Str
+from traits.api import HasTraits, CInt, Str, Property, Enum
+from jigna.api import View
 
 def get_svg_plot():
     """Return SVG string of a matplotlib plot.
@@ -21,13 +28,16 @@ def get_png_plot():
     stream.seek(0)
     return stream.buf.encode('base64')
 
+#### Domain model ####
 
-class Model(HasTraits):
+class MyPlot(HasTraits):
     scaling_factor = CInt(1)
 
-    plot_output = Str
+    format = Enum('png', 'svg')
 
-    def _make_plot(self):
+    plot_output = Property(Str, depends_on='scaling_factor')
+
+    def _get_plot_output(self):
         x = np.linspace(-2*np.pi, 2*np.pi, 200)
         y = np.sin(self.scaling_factor*x)/x
         plt.clf()
@@ -35,52 +45,37 @@ class Model(HasTraits):
         plt.xlabel('X')
         plt.ylabel('Y')
         plt.title("sin(%s x)/x"%self.scaling_factor)
+        
+        get_plot_output = dict(svg=get_svg_plot, png=get_png_plot)
 
-    def _scaling_factor_changed(self, value):
-        self._make_plot()
-        self.plot_output = self.get_plot()
+        return get_plot_output[self.format]()        
 
-    def _plot_output_default(self):
-        self._make_plot()
-        return self.get_plot()
+#### UI layer ####
 
-    def get_plot(self):
-        return get_png_plot()
+body_html_png = """
+    <div>
+        Scaling factor: <input type="range" ng-model="model.scaling_factor"
+                        min=0 max=30><br>
+        Plot:<br>
+        <div><img src="data:image/png;base64,{{model.plot_output}}"></div>
+    </div>
+"""
 
-    def get_html(self):
-        return self._get_png_html()
+body_html_svg = """
+    <div>
+        Scaling factor: <input type="range" ng-model="model.scaling_factor"
+                        min=0 max=30><br>
+        Plot:<br>
+        <div ng-bind-html-unsafe="model.plot_output">{{model.plot_output}}</div>
+    </div>
+"""
 
-    def _get_svg_html(self):
-        body_html = """
-            <div>
-            Scaling factor: <input type="range" ng-model="model.scaling_factor"
-                            min=0 max=30><br>
-            Plot:<br>
-            <div ng-bind-html-unsafe="model.plot_output">{{model.plot_output}}</div>
-            </div>
-        """
-        return body_html
+#### Entry point ####
 
-    def _get_png_html(self):
-        body_html = """
-                <div>
-                Scaling factor: <input type="range" ng-model="model.scaling_factor"
-                                min=0 max=30><br>
-                Plot:<br>
-                <div>
-                <img src="data:image/png;base64,{{model.plot_output}}">
-                </div>
-                </div>
-            """
-        return body_html
-
-
-def test_standalone():
-    model = Model()
-    from jigna.api import View
-    v = View(body_html=model.get_html())
-    v.serve(model=model)
-
+def main():
+    model = MyPlot(format='svg')
+    view = View(body_html=body_html_svg)
+    view.serve(model=model)
 
 if __name__ == '__main__':
-    test_standalone()
+    main()
